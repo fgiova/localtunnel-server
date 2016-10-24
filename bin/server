@@ -6,6 +6,7 @@ require('babel-register');
 const log = require('bookrc');
 const debug = require('debug')('localtunnel');
 const optimist = require('optimist');
+const fs = require('fs');
 
 const argv = optimist
     .usage('Usage: $0 --port [num]')
@@ -25,6 +26,10 @@ const argv = optimist
         default: '3150',
         describe: 'listen on this port for outside requests'
     })
+    .options('keyfolder', {
+        default: null,
+        describe: 'folder with keys for authentication'
+    })
     .options('max-sockets', {
         default: 10,
         describe: 'maximum number of tcp sockets each client is allowed to establish at one time (the tunnels)'
@@ -36,11 +41,17 @@ if (argv.help) {
     process.exit();
 }
 
+if(argv.keyfolder){
+	if(!argv.keyfolder.startsWith("/"))
+		argv.keyfolder = fs.realpathSync(process.cwd()+"/"+argv.keyfolder);
+}
+
 const server = require('../server')({
     max_tcp_sockets: argv['max-sockets'],
     secure: argv.secure,
     mainhostname: argv.hostname,
-    ports: argv['port-interval']
+    ports: argv['port-interval'],
+    keyfolder: argv.keyfolder
 });
 
 server.listen(argv.port, () => {

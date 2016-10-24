@@ -1,11 +1,13 @@
 import log from 'bookrc';
 import express from 'express';
+import jwt from 'express-jwt';
 import tldjs from 'tldjs';
 import on_finished from 'on-finished';
 import Debug from 'debug';
 import http_proxy from 'http-proxy';
 import http from 'http';
 import Promise from 'bluebird';
+import fs from 'fs';
 
 
 import Random from'random-number';
@@ -22,7 +24,9 @@ const proxy = http_proxy.createProxyServer({
 
 proxy.on('error', function(err) {
     log.error(err);
-});
+}); 
+
+const opts={};
 
 proxy.on('proxyReq', function(proxyReq, req, res, options) {
     // rewrite the request so it hits the correct url on github
@@ -255,14 +259,33 @@ function new_client(id, opt, cb) {
     });
 }
 
+function secretCallback (req, payload, done){
+	var issuer = payload.iss;
+	var publicKey = null;
+	try{
+		publicKey = fs.readFileSync(opts.keyfolder+'/'+issuer+'.pub');
+		done(null, publicKey);
+	}
+	catch(error){
+		return done(error);
+	}
+}
+
 module.exports = function(opt) {
     opt = opt || {};
-
+    
+    opts.keyfolder=opt.keyfolder;
+    
     const schema = opt.secure ? 'https' : 'http';
 
     const app = express();
 
-    app.get('/', function(req, res, next) {
+    app.get('/', 
+    		jwt({secret: secretCallback})
+    		.unless(function(req){ 
+    			return req.query['new'] === undefined || !opts.keyfolder || opts.keyfolder.length <= 0; 
+    		}),  function(req, res, next) {
+    	
         if (req.query['new'] === undefined) {
             return next();
         }
