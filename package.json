@@ -24,7 +24,8 @@
     "localenv": "0.2.2",
     "on-finished": "2.3.0",
     "optimist": "0.6.1",
-    "tldjs": "1.6.2"
+    "tldjs": "1.6.2",
+    "random-number": "0.0.7"
   },
   "devDependencies": {
     "mocha": "2.5.3",

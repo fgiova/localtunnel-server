@@ -7,6 +7,9 @@ import http_proxy from 'http-proxy';
 import http from 'http';
 import Promise from 'bluebird';
 
+
+import Random from'random-number';
+
 import Proxy from './proxy';
 import rand_id from './lib/rand_id';
 import BindingAgent from './lib/BindingAgent';
@@ -33,6 +36,11 @@ const PRODUCTION = process.env.NODE_ENV === 'production';
 // id -> client http server
 const clients = Object.create(null);
 
+const pgen = {
+	gen:	null,
+	ports:	[]
+};
+
 // proxy statistics
 const stats = {
     tunnels: 0
@@ -40,14 +48,21 @@ const stats = {
 
 // handle proxying a request to a client
 // will wait for a tunnel socket to become available
-function maybe_bounce(req, res, sock, head) {
+function maybe_bounce(req, res, opt, sock, head) {
     // without a hostname, we won't know who the request is for
     const hostname = req.headers.host;
     if (!hostname) {
         return false;
     }
-
-    const subdomain = tldjs.getSubdomain(hostname);
+    let subdomain;
+    if(opt.mainhostname.length>0){
+    	if(opt.mainhostname===hostname)
+    		return false;
+    	subdomain = hostname.replace(opt.mainhostname, '').split(".")[0];
+        console.log(subdomain);
+    }
+    else
+    	subdomain = tldjs.getSubdomain(hostname);
     if (!subdomain) {
         return false;
     }
@@ -191,9 +206,26 @@ function new_client(id, opt, cb) {
     if (clients[id]) {
         id = rand_id();
     }
-
+    
+    let nextport=null
+    
+    if(pgen.gen){
+    	let maxtries=20;
+    	let porttry=1;
+    	nextport=pgen.gen();
+    	while(pgen.ports.indexOf(nextport)>=0){
+    		nextport=pgen.gen();
+    		porttry++;
+    		if(porttry>maxtries){
+    			 debug('all ports occupied');
+    			 return;
+    		}
+    	}
+    }
+    
     const popt = {
         id: id,
+        port: nextport,
         max_tcp_sockets: opt.max_tcp_sockets
     };
 
@@ -205,6 +237,7 @@ function new_client(id, opt, cb) {
 
     client.on('end', function() {
         --stats.tunnels;
+        delete pgen.ports[clients[id].port];
         delete clients[id];
     });
 
@@ -216,7 +249,7 @@ function new_client(id, opt, cb) {
         }
 
         ++stats.tunnels;
-
+        pgen.ports.push(clients[id].port);
         info.id = id;
         cb(err, info);
     });
@@ -300,9 +333,20 @@ module.exports = function(opt) {
 
     const server = http.createServer();
 
+    if(opt.ports.length>0){
+    	let interval=opt.ports.split("-");
+    	if(interval.length===2){
+    		pgen.gen = Random.generator({
+    			min:  parseInt(interval[0]),
+    			max:  parseInt(interval[1]),
+    			integer: true
+    		});
+    	}
+    }
+    
     server.on('request', function(req, res) {
         debug('request %s', req.url);
-        if (maybe_bounce(req, res, null, null)) {
+        if (maybe_bounce(req, res, opt, null, null)) {
             return;
         };
 
@@ -310,7 +354,7 @@ module.exports = function(opt) {
     });
 
     server.on('upgrade', function(req, socket, head) {
-        if (maybe_bounce(req, null, socket, head)) {
+        if (maybe_bounce(req, null, opt, socket, head)) {
             return;
         };
 
